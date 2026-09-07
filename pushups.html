@@ -1,0 +1,437 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<title>Счёт отжиманий</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;600;800&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --floor:#16130F;
+    --floor-lift:#211D17;
+    --chalk:#F2EDE3;
+    --chalk-dim:#8E877A;
+    --signal:#FFB000;
+    --deep:#0C0A08;
+  }
+  *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+  html,body{height:100%}
+  body{
+    background:var(--floor);
+    color:var(--chalk);
+    font-family:'Archivo',-apple-system,BlinkMacSystemFont,sans-serif;
+    overflow:hidden;
+    display:flex;
+    flex-direction:column;
+    padding:env(safe-area-inset-top) 20px env(safe-area-inset-bottom);
+    touch-action:manipulation;
+  }
+  #cam{position:absolute;width:2px;height:2px;opacity:0;pointer-events:none;top:0;left:0}
+
+  .screen{
+    flex:1;display:none;flex-direction:column;
+    align-items:stretch;justify-content:center;
+    padding:24px 0;
+  }
+  .screen.on{display:flex}
+
+  /* ——— стартовый экран ——— */
+  h1{
+    font-size:clamp(34px,9vw,52px);
+    font-weight:800;
+    line-height:.95;
+    letter-spacing:-.03em;
+    max-width:12ch;
+  }
+  .lede{
+    margin-top:20px;
+    font-size:16px;
+    line-height:1.55;
+    color:var(--chalk-dim);
+    max-width:34ch;
+  }
+  ol.setup{
+    margin-top:28px;
+    padding-left:0;
+    list-style:none;
+    counter-reset:s;
+    border-top:1px solid var(--floor-lift);
+    max-width:38ch;
+  }
+  ol.setup li{
+    counter-increment:s;
+    display:grid;
+    grid-template-columns:26px 1fr;
+    gap:14px;
+    padding:14px 0;
+    border-bottom:1px solid var(--floor-lift);
+    font-size:15px;
+    line-height:1.45;
+  }
+  ol.setup li::before{
+    content:counter(s);
+    font-variant-numeric:tabular-nums;
+    font-weight:600;
+    color:var(--signal);
+  }
+
+  button{
+    font-family:inherit;
+    border:none;
+    cursor:pointer;
+    font-weight:600;
+  }
+  .go{
+    margin-top:32px;
+    background:var(--signal);
+    color:var(--deep);
+    font-size:19px;
+    padding:20px;
+    border-radius:2px;
+    width:100%;
+    letter-spacing:-.01em;
+  }
+  .go:active{transform:translateY(1px)}
+  .ghost{
+    background:none;
+    color:var(--chalk-dim);
+    border:1px solid var(--floor-lift);
+    padding:15px;
+    font-size:15px;
+    border-radius:2px;
+    width:100%;
+    margin-top:10px;
+  }
+  .err{
+    margin-top:18px;color:var(--signal);font-size:14px;line-height:1.5;display:none;
+    border-left:2px solid var(--signal);padding-left:12px;
+  }
+
+  /* ——— калибровка ——— */
+  #calib{justify-content:center;text-align:center}
+  .pulse{font-size:20px;font-weight:600}
+  .hint{margin-top:12px;color:var(--chalk-dim);font-size:15px;line-height:1.5}
+
+  /* ——— счёт ——— */
+  #run{position:relative;justify-content:space-between}
+  #flip{
+    position:absolute;top:8px;right:0;z-index:3;
+    background:none;color:var(--chalk-dim);font-size:13px;
+    border:1px solid var(--floor-lift);border-radius:2px;padding:9px 12px;
+  }
+  .rotated{transform:rotate(180deg)}
+  .countwrap{
+    flex:1;display:flex;flex-direction:column;
+    align-items:center;justify-content:center;
+  }
+  #count{
+    font-size:min(52vh,58vw);
+    font-weight:800;
+    line-height:.8;
+    letter-spacing:-.05em;
+    font-variant-numeric:tabular-nums;
+    transition:transform .09s ease-out;
+  }
+  #count.beat{transform:scale(1.06)}
+  #total{
+    margin-top:18px;color:var(--chalk-dim);font-size:15px;font-variant-numeric:tabular-nums;
+  }
+
+  /* индикатор темноты — тонкая шкала снизу */
+  .meter{
+    height:3px;background:var(--floor-lift);position:relative;margin-bottom:16px;
+  }
+  .meter i{
+    position:absolute;inset:0 auto 0 0;background:var(--chalk-dim);width:100%;
+    transition:width .05s linear;
+  }
+  .meter b{
+    position:absolute;top:-4px;bottom:-4px;width:1px;background:var(--signal);
+  }
+  .stop{
+    background:none;color:var(--chalk);
+    border:1px solid var(--floor-lift);
+    padding:18px;font-size:17px;border-radius:2px;width:100%;
+  }
+
+  /* вспышка на счёт */
+  #flash{
+    position:fixed;inset:0;pointer-events:none;z-index:2;
+    box-shadow:inset 0 0 0 0 var(--signal);
+    transition:box-shadow .28s ease-out;
+  }
+  #flash.hit{box-shadow:inset 0 0 0 7px var(--signal);transition:none}
+
+  /* ——— итог ——— */
+  #done h2{font-size:clamp(30px,8vw,44px);font-weight:800;letter-spacing:-.03em;line-height:1}
+  .tally{
+    display:flex;flex-wrap:wrap;gap:22px;
+    margin-top:30px;padding-top:22px;border-top:1px solid var(--floor-lift);
+  }
+  .set{display:flex;flex-direction:column;gap:8px}
+  .marks{display:flex;gap:4px;align-items:flex-end;height:34px}
+  .marks span{width:2px;height:100%;background:var(--chalk)}
+  .marks span.cross{
+    width:22px;margin-left:-20px;height:2px;align-self:center;
+    background:var(--signal);transform:rotate(-24deg);
+  }
+  .set em{font-style:normal;font-size:13px;color:var(--chalk-dim);font-variant-numeric:tabular-nums}
+
+  @media (prefers-reduced-motion:reduce){
+    #count,#flash{transition:none}
+  }
+</style>
+</head>
+<body>
+
+<video id="cam" playsinline muted autoplay></video>
+<div id="flash"></div>
+
+<!-- 1. старт -->
+<section class="screen on" id="intro">
+  <h1>Отжимания без нажатий</h1>
+  <p class="lede">Фронтальная камера видит, как ты закрываешь телефон корпусом. Каждое опускание — один счёт и сигнал.</p>
+  <ol class="setup">
+    <li>Положи телефон экраном вверх, под грудь</li>
+    <li>Верх экрана направь к своей голове</li>
+    <li>Опускайся так, чтобы грудь была в паре ладоней над стеклом</li>
+  </ol>
+  <button class="go" id="begin">Разрешить камеру и начать</button>
+  <p class="err" id="err"></p>
+</section>
+
+<!-- 2. калибровка -->
+<section class="screen" id="calib">
+  <p class="pulse" id="calibText">Не двигайся, замеряю свет</p>
+  <p class="hint">Убери руки и лицо из поля зрения камеры</p>
+</section>
+
+<!-- 3. счёт -->
+<section class="screen" id="run">
+  <button id="flip">Перевернуть</button>
+  <div class="countwrap">
+    <div id="count">0</div>
+    <div id="total"></div>
+  </div>
+  <div>
+    <div class="meter"><i id="bar"></i><b id="thr"></b></div>
+    <button class="stop" id="finish">Закончить подход</button>
+  </div>
+</section>
+
+<!-- 4. итог -->
+<section class="screen" id="done">
+  <h2 id="doneTitle"></h2>
+  <p class="lede" id="doneSub"></p>
+  <div class="tally" id="tally"></div>
+  <button class="go" id="again">Ещё подход</button>
+  <button class="ghost" id="reset">Сбросить сессию</button>
+</section>
+
+<script>
+(() => {
+  const $ = id => document.getElementById(id);
+  const screens = ['intro','calib','run','done'];
+  const show = name => screens.forEach(s => $(s).classList.toggle('on', s === name));
+
+  const video = $('cam');
+  const canvas = document.createElement('canvas');
+  canvas.width = 32; canvas.height = 24;
+  const ctx = canvas.getContext('2d', { willReadFrequently: true });
+
+  // настройки детектора
+  const DOWN = 0.55;   // доля от базовой яркости — считаем, что накрыли
+  const UP   = 0.78;   // порог возврата, гистерезис от дребезга
+  const MIN_MS = 350;  // защита от двойного счёта
+
+  let stream = null, raf = null, wake = null, audio = null;
+  let baseline = 1, isDown = false, lastRep = 0;
+  let count = 0, sets = [];
+
+  /* ——— звук ——— */
+  function initAudio(){
+    if (audio) return;
+    audio = new (window.AudioContext || window.webkitAudioContext)();
+  }
+  function beep(freq = 660, dur = 0.09, vol = 0.28){
+    if (!audio || audio.state === 'closed') return;
+    if (audio.state === 'suspended') audio.resume();
+    const t = audio.currentTime;
+    const osc = audio.createOscillator(), g = audio.createGain();
+    osc.type = 'sine'; osc.frequency.value = freq;
+    g.gain.setValueAtTime(0, t);
+    g.gain.linearRampToValueAtTime(vol, t + 0.008);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    osc.connect(g); g.connect(audio.destination);
+    osc.start(t); osc.stop(t + dur + 0.02);
+  }
+
+  /* ——— яркость кадра ——— */
+  function luma(){
+    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+    const d = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
+    let sum = 0;
+    for (let i = 0; i < d.length; i += 4){
+      sum += 0.2126 * d[i] + 0.7152 * d[i+1] + 0.0722 * d[i+2];
+    }
+    return sum / (d.length / 4);
+  }
+
+  /* ——— запуск ——— */
+  $('begin').addEventListener('click', async () => {
+    $('err').style.display = 'none';
+    initAudio();
+    beep(880, 0.05, 0.14); // разблокировка звука жестом
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: 'user', width: { ideal: 320 }, height: { ideal: 240 } },
+        audio: false
+      });
+      video.srcObject = stream;
+      await video.play();
+      await keepAwake();
+      calibrate();
+    } catch (e) {
+      const msg = (location.protocol !== 'https:' && location.hostname !== 'localhost')
+        ? 'Камера работает только по https. Открой страницу по защищённой ссылке.'
+        : 'Камера недоступна: ' + (e && e.name ? e.name : 'ошибка') + '. Проверь разрешения для сайта в настройках Safari.';
+      $('err').textContent = msg;
+      $('err').style.display = 'block';
+    }
+  });
+
+  async function keepAwake(){
+    try { if ('wakeLock' in navigator) wake = await navigator.wakeLock.request('screen'); } catch(e){}
+  }
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible' && stream) keepAwake();
+  });
+
+  /* ——— калибровка: берём медиану за 1.6 с ——— */
+  function calibrate(){
+    show('calib');
+    const samples = [];
+    const t0 = performance.now();
+    (function tick(){
+      samples.push(luma());
+      const left = Math.max(0, 1.6 - (performance.now() - t0) / 1000);
+      $('calibText').textContent = left > 0.1
+        ? 'Не двигайся, замеряю свет'
+        : 'Готово';
+      if (performance.now() - t0 < 1600) requestAnimationFrame(tick);
+      else {
+        samples.sort((a,b) => a-b);
+        baseline = Math.max(12, samples[Math.floor(samples.length/2)]);
+        startSet();
+      }
+    })();
+  }
+
+  /* ——— подход ——— */
+  function startSet(){
+    count = 0; isDown = false; lastRep = 0;
+    $('count').textContent = '0';
+    updateTotal();
+    $('thr').style.left = (DOWN * 100) + '%';
+    show('run');
+    beep(520, 0.12, 0.2);
+    loop();
+  }
+
+  function loop(){
+    const v = luma() / baseline;
+    $('bar').style.width = Math.min(100, v * 100) + '%';
+
+    const now = performance.now();
+    if (!isDown && v < DOWN){
+      isDown = true;
+    } else if (isDown && v > UP){
+      isDown = false;
+      if (now - lastRep > MIN_MS){
+        lastRep = now;
+        rep();
+      }
+    }
+    // медленный дрейф базовой яркости вверх, если в комнате посветлело
+    if (!isDown && v > 1.15) baseline = baseline * 0.98 + (v * baseline) * 0.02;
+
+    raf = requestAnimationFrame(loop);
+  }
+
+  function rep(){
+    count++;
+    const el = $('count');
+    el.textContent = count;
+    el.classList.add('beat');
+    setTimeout(() => el.classList.remove('beat'), 90);
+    const f = $('flash');
+    f.classList.add('hit');
+    requestAnimationFrame(() => requestAnimationFrame(() => f.classList.remove('hit')));
+    beep(count % 10 === 0 ? 990 : 660, count % 10 === 0 ? 0.16 : 0.09);
+    if (navigator.vibrate) navigator.vibrate(18);
+  }
+
+  function updateTotal(){
+    const sum = sets.reduce((a,b) => a+b, 0);
+    $('total').textContent = sets.length ? 'до этого сегодня — ' + sum : '';
+  }
+
+  $('flip').addEventListener('click', () => {
+    $('run').classList.toggle('rotated');
+    $('flip').classList.toggle('rotated');
+  });
+
+  /* ——— конец подхода ——— */
+  $('finish').addEventListener('click', () => {
+    cancelAnimationFrame(raf);
+    if (count > 0) sets.push(count);
+    beep(392, 0.22, 0.24);
+    renderDone();
+    show('done');
+  });
+
+  function renderDone(){
+    const sum = sets.reduce((a,b) => a+b, 0);
+    $('doneTitle').textContent = sum + (plural(sum, ' отжимание',' отжимания',' отжиманий'));
+    $('doneSub').textContent = sets.length
+      ? 'За ' + sets.length + plural(sets.length,' подход',' подхода',' подходов') + '. Последний — ' + sets[sets.length-1] + '.'
+      : 'Подход не засчитан — ни одного повторения не поймалось.';
+
+    const box = $('tally');
+    box.innerHTML = '';
+    sets.forEach((n, i) => {
+      const wrap = document.createElement('div');
+      wrap.className = 'set';
+      const marks = document.createElement('div');
+      marks.className = 'marks';
+      for (let k = 0; k < Math.min(n, 40); k++){
+        const s = document.createElement('span');
+        if ((k + 1) % 5 === 0) s.className = 'cross';
+        marks.appendChild(s);
+      }
+      const label = document.createElement('em');
+      label.textContent = 'подход ' + (i+1) + ' · ' + n;
+      wrap.appendChild(marks); wrap.appendChild(label);
+      box.appendChild(wrap);
+    });
+  }
+
+  function plural(n, one, few, many){
+    const m10 = n % 10, m100 = n % 100;
+    if (m10 === 1 && m100 !== 11) return one;
+    if (m10 >= 2 && m10 <= 4 && (m100 < 12 || m100 > 14)) return few;
+    return many;
+  }
+
+  $('again').addEventListener('click', () => { keepAwake(); calibrate(); });
+  $('reset').addEventListener('click', () => {
+    sets = []; renderDone();
+  });
+})();
+</script>
+</body>
+</html>
